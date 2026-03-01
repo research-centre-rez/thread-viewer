@@ -1,50 +1,81 @@
 import cv2
 import uvicorn
+import json
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+import logging
+import sys
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-VIDEO_PATH = "assets/delayed/output_sbs_delayed_25.mp4"
-JPEG_QUALITY = 70
-cache = []
+VIDEO_PATH = f"assets/delayed/output_sbs_delayed_{sys.argv[1]}.mp4" if len(sys.argv) > 1 else 0
+logging.info(f"Using video path: {VIDEO_PATH}")
 
-cap = cv2.VideoCapture(VIDEO_PATH)
-    
+print(VIDEO_PATH)
+
+JPEG_QUALITY = 100
+left_cache = []
+right_cache = []
+
+try:
+    cap = cv2.VideoCapture(VIDEO_PATH)
+except Exception as e:
+    logger.error(f"No video provided: {e}")
+    sys.exit(1)
+
 while True:
     ret, frame = cap.read()
     if not ret:
         break
-        
-    if not(len(cache) % 100):
-        print(f"Loaded {len(cache)} frames")
 
-    _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
-    cache.append(buffer.tobytes())
+    h, w = frame.shape[:2]
+    mid = w // 2
     
+    _, l_buf = cv2.imencode('.jpg', frame[:, :mid], [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
+    _, r_buf = cv2.imencode('.jpg', frame[:, mid:], [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
+    
+    left_cache.append(l_buf.tobytes())
+    right_cache.append(r_buf.tobytes())
+
+    if len(left_cache) % 100 == 0:
+        logger.info(f"Loaded {len(left_cache)} frame pairs")
+
 cap.release()
-total_frames = len(cache)
+total_frames = len(left_cache)
+logger.info(f"Loaded {total_frames} frame pairs.")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """
+    pct: current position in the video
+    delay: configured delay in frames
+    """
     await websocket.accept()
     try:
         while True:
             data = await websocket.receive_text()
             try:
-                pct = float(data)
+                params = json.loads(data)
+                pct = float(params.get("pct", 0.0))
+                delay = int(params.get("delay", 0))
 
-                frame_idx = int(pct * (total_frames - 1))
-                frame_idx = max(0, min(frame_idx, total_frames - 1))
-                
-                #"O(1)" lookup
-                await websocket.send_bytes(cache[frame_idx])
-                
-            except ValueError:
+                idx_l = int(pct * (total_frames - 1))
+                idx_l = max(0, min(idx_l, total_frames - 1))
+
+                idx_r = idx_l + delay
+                idx_r = max(0, min(idx_r, total_frames - 1))
+
+                # TCP has to preserve order
+                await websocket.send_bytes(left_cache[idx_l])
+                await websocket.send_bytes(right_cache[idx_r])
+
+            except (ValueError, json.JSONDecodeError):
                 pass
     except WebSocketDisconnect:
-        print("Client disconnected")
+        logger.info("Client disconnected")
 
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
