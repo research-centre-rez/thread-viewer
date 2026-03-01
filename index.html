@@ -11,6 +11,7 @@
           this.camera = this.el;
           this.connected = false;
           this.isBusy = false; 
+          this.hudText = document.getElementById('hud-text')
 
           const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
           const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -58,6 +59,11 @@
           if (normalizedRot < 0) normalizedRot += PI2;
           const pct = normalizedRot / PI2;
 
+          if (this.hudText) {
+            const degrees = (normalizedRot * (180 / Math.PI)).toFixed(1);
+            this.hudText.setAttribute('value', `Yaw: ${degrees} | ${Math.round(pct * 100)}%`);
+          }
+
           // if (pct < 0.05) {
           //   pct = 0;
           // }
@@ -87,6 +93,13 @@
 
       <a-entity position="0 1.6 0">
         <a-camera socket-scrub stereocam="eye: left;">
+
+          <a-text id="hud-text" 
+                    value="Yaw: 0 | 0%" 
+                    position="0 1 -2" 
+                    color="#00FF00" 
+                    width="4">
+          </a-text>
           
           <a-entity class="video-plane"
                     geometry="primitive: plane; width: 4; height: 2.25" 
