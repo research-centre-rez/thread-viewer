@@ -1,165 +1,57 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8">
-    <title>Socket Scrubber Inverted</title>
-    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    
-    <script>
-      AFRAME.registerComponent('socket-scrub', {
-        init: function () {
-          this.camera = this.el;
-          this.connected = false;
-          this.isBusy = false;
-          
-          this.delayFrames = 0;
-          this.isLeftMsg = true;
-          this.hudText = document.getElementById('hud-text')
+	<head>
+		<meta charset="utf-8" />
+		<title>Socket Scrubber Inverted</title>
+		<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
-          this.leftMesh = document.getElementById('left-plane').getObject3D('mesh');
-          this.rightMesh = document.getElementById('right-plane').getObject3D('mesh');
+		<script src="viewer.js"></script>
+	</head>
+	<body>
+		<a-scene background="color: #111">
+			<a-assets>
+				<img
+					id="placeholder"
+					src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+				/>
+			</a-assets>
 
+			<a-entity
+				id="right-hand"
+				vive-controls="hand: right"
+				controller
+			></a-entity>
 
-          window.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowUp') {
-              this.delayFrames++;
-            } else if (e.key === 'ArrowDown') {
-              this.delayFrames--;
-            }
-          });
+			<a-entity position="0 1.6 0">
+				<a-camera socket-scrub stereocam="eye: left;">
+					<a-text
+						id="hud-text"
+						value="Yaw: 0 | Delay: 0"
+						position="0 1 -2"
+						align="center"
+						color="#00FF00"
+						width="4"
+					></a-text>
 
-          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          const wsUrl = `${protocol}//${window.location.host}/ws`;
-          
-          console.log("Connecting to", wsUrl);
-          this.ws = new WebSocket(wsUrl);
-          
-          this.ws.onopen = () => {
-            console.log("WebSocket Connected");
-            this.connected = true;
-          };
+					<a-entity
+						id="left-plane"
+						geometry="primitive: plane; width: 4; height: 4.4"
+						position="0 0 -6"
+						material="shader: flat; src: #placeholder; repeat: 1 1; offset: 0 0"
+						stereo-layer="eye: left"
+					>
+					</a-entity>
 
-          this.ws.onmessage = (event) => {
-            const blob = event.data;
-            const url = URL.createObjectURL(blob);
-
-            const targetMesh = this.isLeftMsg ? this.leftMesh : this.rightMesh;
-            const isRightEye = !this.isLeftMsg;
-            
-            const img = new Image();
-            img.onload = () => {
-                if (targetMesh && targetMesh.material && targetMesh.material.map) {
-                  targetMesh.material.map.image = img;
-                  targetMesh.material.map.needsUpdate = true;
-                }
-                
-                URL.revokeObjectURL(url);
-
-                if (isRightEye) {
-                  this.isBusy = false;
-                } 
-            };
-            img.src = url;
-
-            this.isLeftMsg = !this.isLeftMsg;
-          };
-
-          this.ws.onclose = () => { this.connected = false; };
-        },
-
-       tick: function () {
-        if (!this.connected || this.isBusy) return;
-
-        const rotY = -this.camera.object3D.rotation.y;
-        const PI2 = Math.PI * 2;
-        let normalizedRot = rotY % PI2;
-        
-        if (normalizedRot < 0) normalizedRot += PI2;
-        const pct = normalizedRot / PI2;
-
-        if (this.hudText) {
-          const degrees = (normalizedRot * (180 / Math.PI)).toFixed(1);
-          const percent = Math.round(pct * 100);
-          this.hudText.setAttribute('value', `Yaw: ${degrees} | ${percent}% | Delay: ${this.delayFrames}`);
-        }
-
-        const payload = JSON.stringify({
-          pct: pct,
-          delay: this.delayFrames
-        });
-
-        this.ws.send(payload);
-        this.isBusy = true; 
-      }
-      });
-
-      AFRAME.registerComponent('stereo-layer', {
-        schema: { eye: {type: 'string', default: 'left'} },
-        init: function () {
-          const layerMask = this.data.eye === 'left' ? 1 : 2;
-          this.el.object3D.traverse((node) => {
-            if (node.isMesh) node.layers.set(layerMask);
-          });
-        }
-      });
-
-      AFRAME.registerComponent('controller', {
-        init: function () {
-          this.el.addEventListener('axismove', (evt) => {
-            const scrubber = document.querySelector('[socket-scrub]').components['socket-scrub'];
-            if (!scrubber) return;
-
-            const yAxis = evt.detail.axis[1];
-            
-            if (yAxis > 0.5) {
-              setTimeout(() => {
-                scrubber.delayFrames++;
-              }, 200);
-            } else if (yAxis < -0.5) {
-              setTimeout(() => {
-                scrubber.delayFrames--;
-              }, 200);
-            }
-          });
-
-          this.el.addEventListener('triggerdown', () => {
-            const scrubber = document.querySelector('[socket-scrub]').components['socket-scrub'];
-            if (scrubber) scrubber.delayFrames = 0;
-          });
-        }
-      });
-
-    </script>
-  </head>
-  <body>
-    <a-scene background="color: #111">
-      <a-assets>
-        <img id="placeholder" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=">
-      </a-assets>
-
-      <a-entity id="right-hand" vive-controls="hand: right" controller></a-entity>
-
-      <a-entity position="0 1.6 0">
-        <a-camera socket-scrub stereocam="eye: left;">
-          
-          <a-text id="hud-text" value="Yaw: 0 | Delay: 0" position="0 1 -2" align="center" color="#00FF00" width="4"></a-text>
-
-          <a-entity id="left-plane"
-                    geometry="primitive: plane; width: 4; height: 4.4" 
-                    position="0 0 -6"
-                    material="shader: flat; src: #placeholder; repeat: 1 1; offset: 0 0"
-                    stereo-layer="eye: left">
-          </a-entity>
-
-          <a-entity id="right-plane"
-                    geometry="primiive: plane; width: 4; height: 4.4" 
-                    position="0 0 -6"
-                    material="shader: flat; src: #placeholder; repeat: 1 1; offset: 0 0"
-                    stereo-layer="eye: right">
-          </a-entity>
-
-        </a-camera>
-      </a-entity>
-    </a-scene>
-  </body>
+					<a-entity
+						id="right-plane"
+						geometry="primiive: plane; width: 4; height: 4.4"
+						position="0 0 -6"
+						material="shader: flat; src: #placeholder; repeat: 1 1; offset: 0 0"
+						stereo-layer="eye: right"
+					>
+					</a-entity>
+				</a-camera>
+			</a-entity>
+		</a-scene>
+	</body>
 </html>
