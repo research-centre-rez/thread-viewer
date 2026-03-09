@@ -6,30 +6,24 @@ from fastapi.staticfiles import StaticFiles
 import logging
 import sys
 import struct
+from pathlib import Path
+from tqdm import tqdm
+
+from src.loader import Thread 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-VIDEO_PATH = (
-    f"assets/delayed/output_sbs_delayed_{sys.argv[1]}.mp4" if len(sys.argv) > 1 else 0
-)
-logging.info(f"Using video path: {VIDEO_PATH}")
-
-print(VIDEO_PATH)
+thread = Thread()
+cap, frame_count = thread.get_capture(0) # TODO: dynamic layer
 
 JPEG_QUALITY = 100
 left_cache = []
 right_cache = []
 
-try:
-    cap = cv2.VideoCapture(VIDEO_PATH)
-except Exception as e:
-    logger.error(f"No video provided: {e}")
-    sys.exit(1)
-
-while True:
+for _ in tqdm(range(frame_count), desc="Loading layer X footage"):
     ret, frame = cap.read()
     if not ret:
         break
@@ -46,9 +40,6 @@ while True:
 
     left_cache.append(l_buf.tobytes())
     right_cache.append(r_buf.tobytes())
-
-    if len(left_cache) % 100 == 0:
-        logger.info(f"Loaded {len(left_cache)} frame pairs")
 
 cap.release()
 total_frames = len(left_cache)
