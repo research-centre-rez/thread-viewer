@@ -1,84 +1,69 @@
-import cv2
 import uvicorn
 import json
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 import logging
-import sys
-import struct
-from pathlib import Path
-from tqdm import tqdm
+import asyncio
 
 from src.loader import Thread 
+from src.cache import Cache 
+from src.utils import construct_payload, unbound_access
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
-
 thread = Thread()
-cap, frame_count = thread.get_capture(0) # TODO: dynamic layer
+cache = Cache(thread)
 
-JPEG_QUALITY = 100
-left_cache = []
-right_cache = []
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("[BLOCKING OPERATION] Loading first layer")
+    cache.load_layer(0)
+    
+    logger.info("[BLOCKING OPERATION] Preloading second layer")
+    asyncio.create_task(cache.preload_layer(1))
 
-for _ in tqdm(range(frame_count), desc="Loading layer X footage"):
-    ret, frame = cap.read()
-    if not ret:
-        break
+    yield
 
-    h, w = frame.shape[:2]
-    mid = w // 2
+    logger.info("Shutting down, clearing cache")
+    cache.storage.clear()
 
-    _, l_buf = cv2.imencode(
-        ".jpg", frame[:, :mid], [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY]
-    )
-    _, r_buf = cv2.imencode(
-        ".jpg", frame[:, mid:], [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY]
-    )
-
-    left_cache.append(l_buf.tobytes())
-    right_cache.append(r_buf.tobytes())
-
-cap.release()
-total_frames = len(left_cache)
-logger.info(f"Loaded {total_frames} frame pairs.")
-
+app = FastAPI(lifespan=lifespan)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """
-    pct: current position in the video
-    delay: configured delay in frames
-    """
     await websocket.accept()
+    current_idx = 0 # index stored PER CONNECTION
     try:
         while True:
             data = await websocket.receive_text()
             try:
                 params = json.loads(data)
-                pct = float(params.get("pct", 0.0))
-                delay = int(params.get("delay", 0))
+                
+                # move to the next layer
+                action = params.get("action", "")
+                direction = 1 if action == "next"  else -1 if action == "prev" else 0
 
-                idx_l = int(pct * (total_frames - 1))
-                idx_l = max(0, min(idx_l, total_frames - 1))
+                if action:
+                    if unbound_access(0, len(thread.layers), current_idx+direction):
+                        continue
 
-                idx_r = idx_l + delay
-                idx_r = max(0, min(idx_r, total_frames - 1))
+                    current_idx += direction
+                    logger.info(f"Changing to layer {current_idx}")
+                    asyncio.create_task(cache.preload_layer(current_idx + current_idx))
+                    continue
 
-                left_bytes = left_cache[idx_l]
-                right_bytes = right_cache[idx_r]
+                layer_data = cache.get_layer(current_idx)
+                if not layer_data:
+                    logger.warning(f"Layer {current_idx} not loaded yet.")
+                    continue
 
-                # big endian, uint, size valid for both images
-                header = struct.pack(">I", len(left_bytes))
-                payload = header + left_bytes + right_bytes
-
+                payload = construct_payload(layer_data, params)
                 await websocket.send_bytes(payload)
 
             except (ValueError, json.JSONDecodeError) as e:
-                logger.error(f"{e}")
-                pass
+                logger.error(f"Payload error: {e}")
 
     except WebSocketDisconnect:
         logger.info("Client disconnected")
