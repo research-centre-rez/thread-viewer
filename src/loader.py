@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 
 class Thread:
     def __init__(self):
+        if len(sys.argv) < 2:
+            logging.error("Too few arguments!")
+            sys.exit(1)
+
         self.path = Path(sys.argv[1])
         logging.info(f"Using thread path: {self.path}")
 
@@ -19,11 +23,8 @@ class Thread:
         logging.info(f"Found layer footage: {self.layers}")
 
 
-    def get_capture(self, index) -> tuple[cv2.VideoCapture, int]:
-        try:
-            cap = cv2.VideoCapture(str(self.layers[index]))
-        except Exception as e:
-            logger.error(f"No video provided: {e}")
-            sys.exit(1)
+    def get_path(self, index) -> Path:
+        if 0 > index >= len(self.layers):
+            raise IndexError("Layer index out of bounds")
 
-        return (cap, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
+        return self.layers[index]

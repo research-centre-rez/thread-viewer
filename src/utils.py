@@ -32,7 +32,7 @@ def angle_to_index(params: dict[str, Any], frame_count: int) -> tuple[int, int]:
 
     return (idx_l, idx_r)
 
-def unbound_access(bottom_bound, top_bound, access):
+def unbound_access(bottom_bound: int, top_bound: int, access: int):
     if bottom_bound <= access <= top_bound:
         return False 
 

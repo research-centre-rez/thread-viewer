@@ -2,6 +2,9 @@ from src.loader import Thread
 from tqdm import tqdm
 import logging
 import asyncio
+import tempfile
+from pathlib import Path
+import subprocess
 
 from src.utils import encode_frame
 
@@ -19,23 +22,42 @@ class Cache:
         self.loader = loader
         self.storage: dict[int, tuple[HalfView, HalfView]] = {}
         self.jobs = set()
-    
+
     def load_layer(self, idx: int) -> None:
-        cap, frame_count = self.loader.get_capture(idx)
+        video_path = self.loader.get_path(idx)
         left: list[bytes] = []
         right: list[bytes] = []
 
-        for _ in tqdm(range(frame_count), desc=f"Loading layer {idx} footage"):
-            ret, frame = cap.read()
-            if not ret:
-                break
+        logger.info(f"Extracting layer {idx} frames via ffmpeg")
 
-            left.append(encode_frame(frame, True).tobytes())
-            right.append(encode_frame(frame, False).tobytes())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            cmd = [
+                "ffmpeg", "-y", 
+                "-hide_banner", "-loglevel", "warning", "-stats",
+                "-i", str(video_path),
+                "-filter_complex", "[0:v]crop=iw/2:ih:0:0[l];[0:v]crop=iw/2:ih:iw/2:0[r]",
+                "-map", "[l]", "-q:v", "2", str(temp_path / "l_%06d.jpg"),
+                "-map", "[r]", "-q:v", "2", str(temp_path / "r_%06d.jpg")
+            ]
+            
+            subprocess.run(
+                cmd, 
+                stdout=subprocess.DEVNULL, 
+                check=True
+            )
+            
+            l_files = sorted(temp_path.glob("l_*.jpg"))
+            r_files = sorted(temp_path.glob("r_*.jpg"))
+            frame_count = len(l_files)
 
-            self.storage[idx] = (left, right)
+            for l_file, r_file in tqdm(zip(l_files, r_files), total=frame_count, desc=f"Loading layer {idx} to RAM"):
+                with open(l_file, "rb") as fl, open(r_file, "rb") as fr:
+                    left.append(fl.read())
+                    right.append(fr.read())
 
-        cap.release()
+        self.storage[idx] = (left, right)
         logger.info(f"Loaded {frame_count} frame pairs")
 
     async def preload_layer(self, idx: int):
