@@ -28,7 +28,7 @@ AFRAME.registerComponent("socket-scrub", {
 
 		console.log("Connecting to", wsUrl);
 		this.ws = new WebSocket(wsUrl);
-		this.binaryType = "arraybuffer";
+		this.ws.binaryType = "arraybuffer";
 
 		this.ws.onopen = () => {
 			console.log("WebSocket Connected");

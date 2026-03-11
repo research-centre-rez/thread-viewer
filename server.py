@@ -51,7 +51,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     current_idx += direction
                     logger.info(f"Changing to layer {current_idx}")
-                    asyncio.create_task(cache.preload_layer(current_idx + current_idx))
+                    asyncio.create_task(cache.preload_layer(current_idx + direction))
                     continue
 
                 layer_data = cache.get_layer(current_idx)
