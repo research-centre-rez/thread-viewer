@@ -19,34 +19,64 @@ AFRAME.registerComponent("socket-scrub", {
 
         this.connected = false;
         this.isBusy = false;
-        this.currentLeftFrame = null;
-        this.currentRightFrame = null;
 
-        // Recreate decoders to flush old state and memory
         if (this.leftDecoder) this.leftDecoder.close();
         if (this.rightDecoder) this.rightDecoder.close();
 
         this.leftDecoder = new VideoDecoder({
-            output: (frame) => {
-                if (this.currentLeftFrame) this.currentLeftFrame.close();
-                this.currentLeftFrame = frame;
-                if (this.leftMesh && this.leftMesh.material.map) {
-                    this.leftMesh.material.map.image = frame;
-                    this.leftMesh.material.map.needsUpdate = true;
+            output: async (frame) => {
+                try {
+                    const bitmap = await createImageBitmap(frame);
+                    frame.close(); 
+                    
+                    const material = this.leftMesh.material;
+                    if (material && material.map) {
+                        material.map.generateMipmaps = false;
+                        material.map.minFilter = THREE.LinearFilter;
+                        material.map.magFilter = THREE.LinearFilter;
+
+                        if (material.map.image instanceof ImageBitmap) {
+                            material.map.image.close();
+                        }
+                        
+                        material.map.image = bitmap;
+                        material.map.needsUpdate = true;
+                    } else {
+                        bitmap.close();
+                    }
+                } catch (e) {
+                    frame.close();
                 }
             },
             error: (e) => console.error("Left Decoder Error:", e)
         });
 
         this.rightDecoder = new VideoDecoder({
-            output: (frame) => {
-                if (this.currentRightFrame) this.currentRightFrame.close();
-                this.currentRightFrame = frame;
-                if (this.rightMesh && this.rightMesh.material.map) {
-                    this.rightMesh.material.map.image = frame;
-                    this.rightMesh.material.map.needsUpdate = true;
+            output: async (frame) => {
+                try {
+                    const bitmap = await createImageBitmap(frame);
+                    frame.close();
+                    
+                    const material = this.rightMesh.material;
+                    if (material && material.map) {
+                        material.map.generateMipmaps = false;
+                        material.map.minFilter = THREE.LinearFilter;
+                        material.map.magFilter = THREE.LinearFilter;
+
+                        if (material.map.image instanceof ImageBitmap) {
+                            material.map.image.close();
+                        }
+                        
+                        material.map.image = bitmap;
+                        material.map.needsUpdate = true;
+                    } else {
+                        bitmap.close();
+                    }
+                    this.isBusy = false; 
+                } catch (e) {
+                    frame.close();
+                    this.isBusy = false;
                 }
-                this.isBusy = false; 
             },
             error: (e) => console.error("Right Decoder Error:", e)
         });
@@ -69,7 +99,7 @@ AFRAME.registerComponent("socket-scrub", {
             if (type === 0) {
                 const extradata = new Uint8Array(buffer, 1);
                 const config = {
-                    codec: 'avc1.4D002A',
+                    codec: 'avc1.4D002A', 
                     description: extradata,
                     optimizeForLatency: true
                 };
@@ -80,8 +110,16 @@ AFRAME.registerComponent("socket-scrub", {
                 const leftView = new Uint8Array(buffer, 5, leftLength);
                 const rightView = new Uint8Array(buffer, 5 + leftLength);
 
-                const leftChunk = new EncodedVideoChunk({ type: 'key', timestamp: this.frameCounter * 1000, data: leftView });
-                const rightChunk = new EncodedVideoChunk({ type: 'key', timestamp: this.frameCounter * 1000, data: rightView });
+                const leftChunk = new EncodedVideoChunk({ 
+                    type: 'key', 
+                    timestamp: this.frameCounter * 1000, 
+                    data: leftView 
+                });
+                const rightChunk = new EncodedVideoChunk({ 
+                    type: 'key', 
+                    timestamp: this.frameCounter * 1000, 
+                    data: rightView 
+                });
 
                 this.frameCounter++;
 
@@ -89,6 +127,7 @@ AFRAME.registerComponent("socket-scrub", {
                     this.leftDecoder.decode(leftChunk);
                     this.rightDecoder.decode(rightChunk);
                 } catch (e) {
+                    console.error("Decode flush error:", e);
                     this.isBusy = false;
                 }
             }
@@ -102,7 +141,8 @@ AFRAME.registerComponent("socket-scrub", {
     },
 
     tick: function () {
-        if (!this.connected || this.isBusy || this.leftDecoder.state !== "configured") return;
+        // Prevent sending payloads to a closed or closing socket
+        if (!this.connected || this.isBusy || !this.ws || this.ws.readyState !== WebSocket.OPEN || this.leftDecoder.state !== "configured") return;
 
         const rotY = -this.camera.object3D.rotation.y;
         const PI2 = Math.PI * 2;
@@ -141,7 +181,6 @@ AFRAME.registerComponent("controller", {
         this.lastMoveTime = 0;
         this.lastXMoveTime = 0;
 
-        // Keyboard bindings for testing
         window.addEventListener("keydown", (e) => {
             const scrubber = document.querySelector("[socket-scrub]").components["socket-scrub"];
             if (!scrubber) return;
@@ -152,7 +191,6 @@ AFRAME.registerComponent("controller", {
             if (e.key === "ArrowRight") scrubber.changeLayer(1);
         });
 
-        // VR Controller trackpad bindings
         this.el.addEventListener("axismove", (evt) => {
             const scrubber = document.querySelector("[socket-scrub]").components["socket-scrub"];
             if (!scrubber) return;
@@ -161,7 +199,6 @@ AFRAME.registerComponent("controller", {
             const xAxis = evt.detail.axis[0];
             const yAxis = evt.detail.axis[1];
 
-            // Y-Axis for Delay
             if (now - this.lastMoveTime > 200) {
                 if (yAxis > 0.5) {
                     scrubber.delayFrames++;
@@ -172,7 +209,6 @@ AFRAME.registerComponent("controller", {
                 }
             }
 
-            // X-Axis for Layer Switch
             if (now - this.lastXMoveTime > 500) {
                 if (xAxis > 0.6) {
                     scrubber.changeLayer(1);
