@@ -1,76 +1,71 @@
-import uvicorn
+import av
+import struct
 import json
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
 import logging
 import asyncio
+import uvicorn
+import sys
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 
-from src.loader import Thread 
+from src.loader import Thread
 from src.cache import Cache 
-from src.utils import construct_payload, unbound_access
+from src.utils import angle_to_index 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-thread = Thread()
+app = FastAPI()
+video_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+thread = Thread(video_dir)
 cache = Cache(thread)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("[BLOCKING OPERATION] Loading first layer")
-    cache.load_layer(0)
-    
-    logger.info("[BLOCKING OPERATION] Preloading second layer")
-    asyncio.create_task(cache.preload_layer(1))
+cache.load_layer(0)
 
-    yield
-
-    logger.info("Shutting down, clearing cache")
-    cache.storage.clear()
-
-app = FastAPI(lifespan=lifespan)
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+@app.websocket("/ws/{layer_idx}")
+async def websocket_endpoint(websocket: WebSocket, layer_idx: int):
     await websocket.accept()
-    current_idx = 0 # index stored PER CONNECTION
+    
+    if layer_idx not in cache.storage:
+        await cache.preload_layer(layer_idx)
+        
+    layer_data = cache.get_layer(layer_idx)
+    if not layer_data:
+        await websocket.close(reason="Layer not found")
+        return
+
+    nal_cache, extradata = layer_data
+    total_frames = len(nal_cache)
+
+    # preload adjacent layers
+    asyncio.create_task(cache.preload_layer(layer_idx + 1))
+    asyncio.create_task(cache.preload_layer(layer_idx - 1))
+
+    init_payload = struct.pack('>B', 0) + (extradata or b"")
+    await websocket.send_bytes(init_payload)
+    
     try:
         while True:
             data = await websocket.receive_text()
             try:
                 params = json.loads(data)
+
+                idx_l, idx_r = angle_to_index(params, total_frames)
+
+                left_nal = nal_cache[idx_l]
+                right_nal = nal_cache[idx_r]
+
+                header = struct.pack('>BI', 1, len(left_nal))
+                payload = header + left_nal + right_nal
                 
-                # move to the next layer
-                action = params.get("action", "")
-                direction = 1 if action == "next"  else -1 if action == "prev" else 0
-
-                if action:
-                    if unbound_access(0, len(thread.layers), current_idx+direction):
-                        continue
-
-                    current_idx += direction
-                    logger.info(f"Changing to layer {current_idx}")
-                    asyncio.create_task(cache.preload_layer(current_idx + current_idx))
-                    continue
-
-                layer_data = cache.get_layer(current_idx)
-                if not layer_data:
-                    logger.warning(f"Layer {current_idx} not loaded yet.")
-                    continue
-
-                payload = construct_payload(layer_data, params)
                 await websocket.send_bytes(payload)
 
-            except (ValueError, json.JSONDecodeError) as e:
-                logger.error(f"Payload error: {e}")
-
+            except (ValueError, json.JSONDecodeError):
+                pass
     except WebSocketDisconnect:
-        logger.info("Client disconnected")
-
+        logger.info(f"Client disconnected from layer {layer_idx}")
 
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

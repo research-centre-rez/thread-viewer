@@ -10,6 +10,7 @@ dependencies = [
 	"uvicorn[standard]",
     "fastapi",
     "websockets",
+    "av",
 ]
 
 [project.optional-dependencies]

@@ -5,26 +5,14 @@ import sys
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 class Thread:
-    def __init__(self):
-        if len(sys.argv) < 2:
-            logging.error("Too few arguments!")
-            sys.exit(1)
-
-        self.path = Path(sys.argv[1])
-        logging.info(f"Using thread path: {self.path}")
-
-        self.layers = sorted([f for f in self.path.iterdir() if f.suffix == ".mp4"])
+    def __init__(self, directory: str):
+        self.dir_path = Path(directory)
+        self.layers = sorted([p for p in self.dir_path.glob("*.mp4")])
         if not self.layers:
-            logger.error("No .mp4 files found in the specified directory.")
+            logger.error(f"No MP4 files found in {self.dir_path}")
             sys.exit(1)
+        logger.info(f"Loaded {len(self.layers)} video layers from {self.dir_path}")
 
-        logging.info(f"Found layer footage: {self.layers}")
-
-
-    def get_path(self, index) -> Path:
-        if 0 > index >= len(self.layers):
-            raise IndexError("Layer index out of bounds")
-
-        return self.layers[index]
+    def get_path(self, idx: int) -> Path:
+        return self.layers[idx]
