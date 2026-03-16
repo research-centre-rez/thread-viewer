@@ -34,14 +34,13 @@ app = FastAPI(lifespan=lifespan)
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    current_idx = 0 # index stored PER CONNECTION
+    current_idx = 0 
     try:
         while True:
             data = await websocket.receive_text()
             try:
                 params = json.loads(data)
                 
-                # move to the next layer
                 action = params.get("action", "")
                 direction = 1 if action == "next"  else -1 if action == "prev" else 0
 
@@ -68,9 +67,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("Client disconnected")
 
-
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

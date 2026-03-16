@@ -1,24 +1,9 @@
 from typing import Any
 import logging
 import struct
-import cv2
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-JPEG_QUALITY = 100
-
-def encode_frame(frame, is_left: bool):
-    """
-    side (bool) 1=left half, 0=right half
-    """
-    mid = frame.shape[:2][1] // 2
-    section = frame[:, :mid] if is_left else frame[:, mid:]
-    _, buff = cv2.imencode(
-        ".jpg", section, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY]
-    )
-
-    return buff
 
 def angle_to_index(params: dict[str, Any], frame_count: int) -> tuple[int, int]:
     pct = float(params.get("pct", 0.0))
@@ -33,23 +18,21 @@ def angle_to_index(params: dict[str, Any], frame_count: int) -> tuple[int, int]:
     return (idx_l, idx_r)
 
 def unbound_access(bottom_bound: int, top_bound: int, access: int):
-    if bottom_bound <= access <= top_bound:
+    if bottom_bound <= access < top_bound:
         return False 
 
-    logger.info(f"Out of bounds acces to layer {access}")
+    logger.info(f"Out of bounds access to layer {access}")
     return True 
 
-def construct_payload(layer_data: tuple[list[bytes], list[bytes]], params: dict[str, Any]) -> bytes:
+def construct_payload(layer_data: list[bytes], params: dict[str, Any]) -> bytes:
     """
     create payload in byte format to send through the websocket
-
     size, left view, right view
     """
-    left, right = layer_data
-    idx_l, idx_r = angle_to_index(params, len(left))
+    idx_l, idx_r = angle_to_index(params, len(layer_data))
 
-    left_bytes = left[idx_l]
-    right_bytes = right[idx_r]
+    left_bytes = layer_data[idx_l]
+    right_bytes = layer_data[idx_r]
 
     header = struct.pack(">I", len(left_bytes))
     return header + left_bytes + right_bytes
