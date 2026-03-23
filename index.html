@@ -2,54 +2,40 @@
 <html>
     <head>
         <meta charset="utf-8" />
-        <title>Socket Scrubber Single 2D Source</title>
+        <title>Socket Scrubber Direct Material Override</title>
         <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
         <script src="viewer.js"></script>
     </head>
     <body>
         <a-scene background="color: #111">
             <a-assets>
-                <img
-                    id="placeholder"
-                    src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-                />
+                <img id="placeholder-l" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" />
+                <img id="placeholder-r" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" />
             </a-assets>
 
-            <a-entity
-                id="right-hand"
-                vive-controls="hand: right"
-                controller
-            ></a-entity>
+            <a-entity id="right-hand" laser-controls="hand: right" controller></a-entity>
 
             <a-entity position="0 1.6 0">
                 <a-camera socket-scrub stereocam="eye: left;">
-                    <a-text
-                        id="hud-text"
-                        value="Yaw: 0 | Delay: 0"
-                        position="0 1 -4"
-                        align="center"
-                        color="#00FF00"
-                        width="4"
-                    ></a-text>
+                    <a-text id="hud-text" value="Yaw: 0 | Delay: 0 | Conv: 0" position="0 0.8 -2" align="center" color="#00FF00" width="3"></a-text>
 
                     <a-entity
                         id="left-plane"
-                        geometry="primitive: plane; width: 4; height: 2.25"
+                        geometry="primitive: plane; width: 2.25; height: 2.25"
                         position="0 0 -3"
-                        material="shader: flat; src: #placeholder; repeat: 1 1; offset: 0 0"
+                        material="shader: flat; src: #placeholder-l"
+                        uv-shift="shiftX: 0"
                         stereo-layer="eye: left"
-                    >
-                    </a-entity>
+                    ></a-entity>
 
                     <a-entity
                         id="right-plane"
-                        geometry="primitive: plane; width: 4; height: 2.25"
+                        geometry="primitive: plane; width: 2.25; height: 2.25"
                         position="0 0 -3"
-                        material="shader: flat; src: #placeholder; repeat: 1 1; offset: 0 0"
+                        material="shader: flat; src: #placeholder-r"
+                        uv-shift="shiftX: 0"
                         stereo-layer="eye: right"
-                    >
-                    </a-entity>
-
+                    ></a-entity>
                 </a-camera>
             </a-entity>
         </a-scene>
