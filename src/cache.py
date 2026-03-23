@@ -16,36 +16,17 @@ class Cache:
         self.jobs = set()
 
     def load_layer(self, idx: int) -> None:
-        video_path = self.loader.get_path(idx)
+        frames_paths = self.loader.get_path(idx)
         frames: list[bytes] = []
 
         logger.info(f"Extracting layer {idx} 2D frames via ffmpeg")
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            
-            cmd = [
-                "ffmpeg", "-y", 
-                "-hide_banner", "-loglevel", "warning", "-stats",
-                "-i", str(video_path),
-                "-q:v", "2", str(temp_path / "f_%06d.jpg")
-            ]
-            
-            subprocess.run(
-                cmd, 
-                stdout=subprocess.DEVNULL, 
-                check=True
-            )
-            
-            files = sorted(temp_path.glob("f_*.jpg"))
-            frame_count = len(files)
-
-            for f_file in tqdm(files, total=frame_count, desc=f"Loading layer {idx} to RAM"):
-                with open(f_file, "rb") as f:
-                    frames.append(f.read())
+        
+        for f_file in tqdm(frames_paths, desc=f"Loading layer {idx} to RAM"):
+            with open(f_file, "rb") as f:
+                frames.append(f.read())
 
         self.storage[idx] = frames
-        logger.info(f"Loaded {frame_count} frames for layer {idx}")
+        logger.info(f"Loaded {len(frames)} frames for layer {idx}")
 
     async def preload_layer(self, idx: int):
         if idx in self.jobs or idx in self.storage:

@@ -1,27 +1,26 @@
-import cv2
 from pathlib import Path
 import logging 
-import sys
+import argparse
+from src.utils import file_count
+
+parser = argparse.ArgumentParser("Thread preprocessing")
+parser.add_argument("source", help="Folder containing the pre-processed thread", type=str)
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class Thread:
     def __init__(self):
-        if len(sys.argv) < 2:
-            logging.error("Too few arguments!")
-            sys.exit(1)
-
-        self.path = Path(sys.argv[1])
+        self.path = Path(parser.parse_args().source)
+        self.layers = [[] * file_count(self.path)]
         logging.info(f"Using thread path: {self.path}")
 
-        self.layers = sorted([f for f in self.path.iterdir() if f.suffix == ".mp4"])
-        if not self.layers:
-            logger.error("No .mp4 files found in the specified directory.")
-            sys.exit(1)
-
-        logging.info(f"Found layer footage: {self.layers}")
-
+        for idx, l in enumerate(self.path.iterdir()):
+            self.frames = sorted([f for f in l.iterdir() if f.suffix == ".jpg"])
+            if not self.frames:
+                raise ValueError(f"No frames found in layer {l.name}")
+            self.layers[idx] = self.frames
 
     def get_path(self, index) -> Path:
         if 0 > index >= len(self.layers):

@@ -1,6 +1,7 @@
 from typing import Any
 import logging
 import struct
+from zipfile import Path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,3 +37,6 @@ def construct_payload(layer_data: list[bytes], params: dict[str, Any]) -> bytes:
 
     header = struct.pack(">I", len(left_bytes))
     return header + left_bytes + right_bytes
+
+def file_count(path: Path, ext="") -> int:
+    return sum(1 for item in path.iterdir() if item.is_file() and (ext == "" or item.suffix == ext))
